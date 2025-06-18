@@ -16,14 +16,53 @@
 
 | 变量名 | 描述 | 是否必须 |
 |--------|------|----------|
-| `AUTH` | 认证令牌，用于验证请求 | 是 |
-| `SMTP_HOST` | SMTP服务器地址 | 是 |
-| `SMTP_PORT` | SMTP服务器端口 | 是 |
-| `SMTP_USER` | SMTP登录用户名 | 是 |
-| `SMTP_PASS` | SMTP登录密码 | 是 |
+| `TOKEN` | 认证令牌，用于验证请求 | 是 |
+| `MAIL_HOST` | SMTP服务器地址 | 是 |
+| `MAIL_PORT` | SMTP服务器端口 | 是 |
+| `MAIL_MAIL` | SMTP登录用户名 | 是 |
+| `MAIL_PASS` | SMTP登录密码 | 是 |
 | `MAIL_FROM` | 发件人邮箱地址 | 是 |
 | `MAIL_TO` | 收件人邮箱地址 | 是 |
-| `SMTP_ENCRYPTION` | SMTP加密类型：`ssl`/`tls`/`starttls`/`none` | 否，默认为`starttls` |
+| `MAIL_SSL` | SMTP加密类型：`ssl`/`tls`/`starttls`/`none` | 否，默认为`starttls` |
+
+## API响应格式
+
+所有API响应均以JSON格式返回，格式如下：
+
+```json
+{
+  "code": 200,  // HTTP状态码
+  "data": {},   // 响应数据，成功时包含文件信息
+  "msg": "备份成功"  // 响应消息
+}
+```
+
+### 成功响应示例
+
+```json
+{
+  "code": 200,
+  "data": {
+    "filename": "backup.zip",
+    "title": "重要数据备份",
+    "size": 1024567,
+    "timestamp": "2025-06-18T09:00:00Z"
+  },
+  "msg": "备份成功"
+}
+```
+
+### 错误响应示例
+
+```json
+{
+  "code": 401,
+  "data": {
+    "error": "无效的认证令牌"
+  },
+  "msg": "认证失败"
+}
+```
 
 ## 不同语言使用示例
 
@@ -58,9 +97,14 @@ async function backupFile(file, title) {
       throw new Error(`备份失败: ${response.status} ${response.statusText}`);
     }
 
-    const result = await response.text();
+    const result = await response.json();
     console.log('备份结果:', result);
-    return result;
+    
+    if (!result.success) {
+      throw new Error(result.msg || '未知错误');
+    }
+    
+    return result.data;
   } catch (error) {
     console.error('备份出错:', error);
     throw error;
@@ -120,11 +164,15 @@ function backupFile($filePath, $title = '') {
     
     curl_close($ch);
     
-    if ($httpCode !== 200) {
-        throw new Exception('备份失败，HTTP状态码: ' . $httpCode . ', 响应: ' . $response);
+    // 解析JSON响应
+    $result = json_decode($response, true);
+    
+    if ($httpCode !== 200 || !$result || $result['code'] !== 200) {
+        $errorMsg = $result['msg'] ?? '未知错误';
+        throw new Exception('备份失败: ' . $errorMsg);
     }
     
-    return $response;
+    return $result;
 }
 
 // 使用示例
@@ -165,7 +213,12 @@ def backup_file(file_path, title=''):
     try:
         response = requests.post(url, headers=headers, files=files, data=data)
         response.raise_for_status()  # 抛出HTTP错误
-        return response.text
+        result = response.json()
+        
+        if result['code'] != 200:
+            raise Exception(f"备份失败: {result['msg']}")
+            
+        return result
     except requests.exceptions.RequestException as e:
         raise Exception(f'备份请求失败: {e}')
     finally:
@@ -186,6 +239,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -254,12 +308,23 @@ func backupFile(filePath, title, token string) (string, error) {
 		return "", fmt.Errorf("读取响应失败: %w", err)
 	}
 	
-	// 检查状态码
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("备份失败，HTTP状态码: %d, 响应: %s", resp.StatusCode, string(respBody))
+	// 解析JSON响应
+	var result map[string]interface{}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return "", fmt.Errorf("解析响应失败: %w", err)
 	}
 	
-	return string(respBody), nil
+	// 检查状态码
+	code, ok := result["code"].(float64)
+	if !ok || int(code) != http.StatusOK {
+		msg := "未知错误"
+		if m, ok := result["msg"].(string); ok {
+			msg = m
+		}
+		return "", fmt.Errorf("备份失败: %s", msg)
+	}
+	
+	return fmt.Sprintf("%v", result["data"]), nil
 }
 
 func main() {

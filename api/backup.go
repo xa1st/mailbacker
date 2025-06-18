@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -16,6 +17,31 @@ import (
 // 全局日志器
 var logger *slog.Logger
 
+// API响应结构
+type APIResponse struct {
+	Code int         `json:"code"`
+	Data interface{} `json:"data"`
+	Msg  string      `json:"msg"`
+}
+
+// 返回JSON响应
+func jsonResponse(w http.ResponseWriter, statusCode int, msg string, data interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	
+	resp := APIResponse{
+		Code: statusCode,
+		Msg:  msg,
+		Data: data,
+	}
+	
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		logger.Error("JSON编码失败", "error", err)
+		// 如果JSON编码失败，尝试返回一个简单的错误
+		w.Write([]byte(`{"code":500,"data":{},"msg":"内部服务器错误"}`)) 
+	}
+}
+
 func init() {
 	// 初始化日志器
 	logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -26,8 +52,10 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 	// 取出令牌
 	auth := os.Getenv("TOKEN")
 	if auth == "" {
-		logger.Error("环境变量AUTH未设置")
-		http.Error(w, "服务器配置错误", http.StatusInternalServerError)
+		logger.Error("环境变量TOKEN未设置")
+		jsonResponse(w, http.StatusInternalServerError, "服务器配置错误", map[string]interface{}{
+			"error": "认证令牌未配置",
+		})
 		return
 	}
 
@@ -38,7 +66,9 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 	// 检查是否包含正确的Bearer token
 	if authorization != expectedAuth {
 		logger.Warn("令牌验证失败", "received", authorization)
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		jsonResponse(w, http.StatusUnauthorized, "认证失败", map[string]interface{}{
+			"error": "无效的认证令牌",
+		})
 		return
 	}
 	// 这里获取发送的标题
@@ -56,7 +86,9 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		logger.Error("文件获取错误", "error", err)
-		http.Error(w, "错误的文件", http.StatusBadRequest)
+		jsonResponse(w, http.StatusBadRequest, "文件上传失败", map[string]interface{}{
+			"error": err.Error(),
+		})
 		return
 	}
 
@@ -66,7 +98,9 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		logger.Error("文件读取错误", "error", err)
-		http.Error(w, "文件读取错误", http.StatusBadRequest)
+		jsonResponse(w, http.StatusBadRequest, "文件读取失败", map[string]interface{}{
+			"error": err.Error(),
+		})
 		return
 	}
 
@@ -75,16 +109,20 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 	err = sendMail(title, handler.Filename, fileBytes)
 	if err != nil {
 		logger.Error("邮件发送错误", "error", err)
-		http.Error(w, "邮件发送错误", http.StatusInternalServerError)
+		jsonResponse(w, http.StatusInternalServerError, "邮件发送失败", map[string]interface{}{
+			"error": err.Error(),
+		})
 		return
 	}
 	logger.Info("邮件发送成功")
-	// 设置内容类型为text/plain
-	w.Header().Set("Content-Type", "text/plain")
-	// 返回200
-	w.WriteHeader(http.StatusOK)
+	
 	// 返回成功响应
-	fmt.Fprint(w, "备份成功!")
+	jsonResponse(w, http.StatusOK, "备份成功", map[string]interface{}{
+		"filename": handler.Filename,
+		"title": title,
+		"size": handler.Size,
+		"timestamp": time.Now().Format(time.RFC3339),
+	})
 }
 
 func sendMail(title, filename string, fileBytes []byte) error {
