@@ -1,0 +1,11 @@
+{
+  "functions": {
+    "api/backup.go": {
+      "maxDuration": 60,
+      "memory": 1024
+    }
+  },
+  "env": {
+    "GO_BUILD_FLAGS": "-ldflags '-s -w'"
+  }
+}
