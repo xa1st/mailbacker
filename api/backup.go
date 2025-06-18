@@ -24,7 +24,7 @@ func init() {
 func UploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	// 取出令牌
-	auth := os.Getenv("AUTH")
+	auth := os.Getenv("TOKEN")
 	if auth == "" {
 		logger.Error("环境变量AUTH未设置")
 		http.Error(w, "服务器配置错误", http.StatusInternalServerError)
@@ -90,13 +90,13 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 func sendMail(title, filename string, fileBytes []byte) error {
 
 	// 获取并验证所有必需的环境变量
-	smtpHost := os.Getenv("SMTP_HOST")
-	smtpPortStr := os.Getenv("SMTP_PORT")
-	smtpUser := os.Getenv("SMTP_USER")
-	smtpPass := os.Getenv("SMTP_PASS")
+	smtpHost := os.Getenv("MAIL_HOST")
+	smtpPortStr := os.Getenv("MAIL_PORT")
+	smtpUser := os.Getenv("MAIL_MAIL")
+	smtpPass := os.Getenv("MAIL_PASS")
 	mailFrom := os.Getenv("MAIL_FROM")
 	mailTo := os.Getenv("MAIL_TO")
-	smtpEncryption := os.Getenv("SMTP_ENCRYPTION")
+	smtpEncryption := os.Getenv("MAIL_SSL")
 
 	// 验证关键环境变量
 	if smtpHost == "" || smtpPortStr == "" || smtpUser == "" || smtpPass == "" || mailFrom == "" || mailTo == "" {
@@ -117,7 +117,7 @@ func sendMail(title, filename string, fileBytes []byte) error {
 	smtpClient.Port = smtpPort
 	smtpClient.Username = smtpUser
 	smtpClient.Password = smtpPass
-	
+
 	// 设置加密类型
 	switch strings.ToLower(smtpEncryption) {
 	case "ssl", "tls":
@@ -148,8 +148,8 @@ func sendMail(title, filename string, fileBytes []byte) error {
 	// 邮件标题
 	email.SetSubject(title)
 	// 设置邮件正文
-	email.SetBody(mail.TextHTML, fmt.Sprintf("<h1>文件备份</h1><p>备份时间: %s</p><p>文件名: %s</p>", 
-		time.Now().Format("2006-01-02 15:04:05"), 
+	email.SetBody(mail.TextHTML, fmt.Sprintf("<h1>文件备份</h1><p>备份时间: %s</p><p>文件名: %s</p>",
+		time.Now().Format("2006-01-02 15:04:05"),
 		filename))
 	// 添加附件
 	email.Attach(&mail.File{Name: filename, Data: fileBytes})
